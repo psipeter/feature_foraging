@@ -2,33 +2,64 @@ using UnityEngine;
 
 public class ForagingTarget : MonoBehaviour
 {
-    // We will link this in the Unity Inspector
-    public DataLogger logger; 
-    
-    // Identifiers for your research analysis
-    public string targetType = "Red_Berry"; 
-    public int pointValue = 10;
+    [Header("Data & Metadata")]
+    public DataLogger logger;
+    public string targetType;
 
-    // This triggers when the Player (with a Rigidbody) enters the Sphere's area
-    private void OnTriggerEnter(Collider other)
+    private Renderer rend;
+    private Color originalColor;
+    private Vector3 spawnScale;
+
+    public float detectionRadius { get; private set; } 
+
+    private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+    private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+
+    void Start()
     {
-        // Check if the object touching us is the Player
-        if (other.CompareTag("Player"))
+        rend = GetComponent<Renderer>();
+        if (rend != null) 
         {
-            // 1. Tell the logger to record the collection
-            if (logger != null)
-            {
-                logger.LogEvent("Target_Collected", targetType);
-            }
+            // Cache color using URP property or fallback
+            originalColor = rend.material.HasProperty(BaseColorId) ? 
+                            rend.material.GetColor(BaseColorId) : rend.material.color;
 
-            // 2. Provide feedback (optional)
-            Debug.Log($"Collected {targetType}! +{pointValue} points.");
-
-            // 3. Make the target "disappear"
-            gameObject.SetActive(false); 
-            
-            // Note: In a real foraging task, you might 'Destroy' it 
-            // or move it to a new random location instead.
+            rend.material.EnableKeyword("_EMISSION");
+            rend.material.SetColor(EmissionColorId, Color.black);
         }
+
+        spawnScale = transform.localScale;
+        detectionRadius = spawnScale.x * 0.5f;
+    }
+
+    public void SetHighlight(bool highlight)
+    {
+        if (rend == null) return;
+
+        Color emission = highlight ? originalColor * 2.5f : Color.black;
+        rend.material.SetColor(EmissionColorId, emission);
+        
+        // Re-apply base color to maintain consistency
+        if (rend.material.HasProperty(BaseColorId))
+            rend.material.SetColor(BaseColorId, originalColor);
+        else
+            rend.material.color = originalColor;
+    }
+
+    public float GetCurrentPercent()
+    {
+        return spawnScale.x > 0 ? transform.localScale.x / spawnScale.x : 0f;
+    }
+
+    public void Shrink(Vector3 startScale, float progress)
+    {
+        transform.localScale = Vector3.Lerp(startScale, Vector3.zero, Mathf.Clamp01(progress));
+        if (progress >= 1f) CompleteHarvest();
+    }
+
+    private void CompleteHarvest()
+    {
+        if (logger != null) logger.LogEvent("Object_Harvested", targetType);
+        Destroy(gameObject);
     }
 }

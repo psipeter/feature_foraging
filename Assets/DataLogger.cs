@@ -6,7 +6,7 @@ public class DataLogger : MonoBehaviour
 {
     private string filePath;
 
-    void Start()
+    void Awake()
     {
         filePath = Application.dataPath + "/foraging_data.csv";
         if (!File.Exists(filePath))
@@ -27,6 +27,12 @@ public class DataLogger : MonoBehaviour
 
     public void LogEvent(string eventName, string objectID)
     {
+        if (string.IsNullOrEmpty(filePath)) 
+        {
+            Debug.LogWarning("DataLogger: Attempted to log before filePath was initialized!");
+            return; 
+        }
+
         string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         string entry = $"{timestamp},{eventName},{objectID}\n";
         File.AppendAllText(filePath, entry);

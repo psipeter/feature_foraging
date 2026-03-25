@@ -3,19 +3,100 @@ using UnityEngine.InputSystem;
 
 public class PlayerMovement : MonoBehaviour
 {
-    public float speed = 10f;
+    [Header("Movement Settings")]
+    public float moveSpeed = 4f;
+    public float maxHarvestDuration = 4.0f; 
+    
+    [Header("Detection Settings")]
+    public float playerRadius = 0.5f; 
+
+    private ForagingTarget currentTarget;
+    private float harvestTimer = 0f;
+    private float currentHarvestDuration = 0f;
+    private bool isHarvesting = false;
+    private Vector3 scaleAtHarvestStart;
 
     void Update()
     {
-        Vector3 moveDirection = Vector3.zero;
+        if (isHarvesting)
+        {
+            HandleHarvesting();
+        }
+        else
+        {
+            FindNearestTarget();
+            HandleMovement();
+        }
+    }
 
-        // Use the New Input System to check keys
-        if (Keyboard.current.wKey.isPressed) moveDirection.z = 1; // Move "Into" the depth
-        if (Keyboard.current.sKey.isPressed) moveDirection.z = -1; // Move "Out" toward camera
-        if (Keyboard.current.aKey.isPressed) moveDirection.x = -1; // Move Left
-        if (Keyboard.current.dKey.isPressed) moveDirection.x = 1;  // Move Right
+    void FindNearestTarget()
+    {
+        ForagingTarget[] allTargets = Object.FindObjectsByType<ForagingTarget>(FindObjectsSortMode.None);
+        ForagingTarget closestInReach = null;
 
-        // Move the player based on world coordinates
-        transform.Translate(moveDirection.normalized * speed * Time.deltaTime, Space.World);
+        foreach (var target in allTargets)
+        {
+            float dist = Vector2.Distance(
+                new Vector2(transform.position.x, transform.position.z),
+                new Vector2(target.transform.position.x, target.transform.position.z)
+            );
+
+            if (dist <= (playerRadius + target.detectionRadius))
+            {
+                closestInReach = target;
+                break; 
+            }
+        }
+
+        if (closestInReach != currentTarget)
+        {
+            if (currentTarget != null) currentTarget.SetHighlight(false);
+            currentTarget = closestInReach;
+            if (currentTarget != null) currentTarget.SetHighlight(true);
+        }
+    }
+
+    void HandleMovement()
+    {
+        Vector2 input = new Vector2(
+            (Keyboard.current.dKey.isPressed ? 1 : 0) - (Keyboard.current.aKey.isPressed ? 1 : 0),
+            (Keyboard.current.wKey.isPressed ? 1 : 0) - (Keyboard.current.sKey.isPressed ? 1 : 0)
+        );
+
+        Vector3 move = new Vector3(input.x, 0, input.y).normalized;
+        transform.Translate(move * moveSpeed * Time.deltaTime, Space.World);
+
+        if (currentTarget != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+        {
+            StartHarvest();
+        }
+    }
+
+    void StartHarvest()
+    {
+        scaleAtHarvestStart = currentTarget.transform.localScale;
+        currentHarvestDuration = maxHarvestDuration * currentTarget.GetCurrentPercent();
+        harvestTimer = 0f;
+        isHarvesting = true;
+    }
+
+    void HandleHarvesting()
+    {
+        if (!Keyboard.current.spaceKey.isPressed || currentTarget == null)
+        {
+            isHarvesting = false;
+            return;
+        }
+
+        harvestTimer += Time.deltaTime;
+        float progress = currentHarvestDuration > 0 ? harvestTimer / currentHarvestDuration : 1f;
+
+        currentTarget.Shrink(scaleAtHarvestStart, progress);
+
+        if (harvestTimer >= currentHarvestDuration)
+        {
+            isHarvesting = false;
+            currentTarget = null;
+        }
     }
 }
