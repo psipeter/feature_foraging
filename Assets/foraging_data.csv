@@ -1,0 +1,9 @@
+Timestamp,Event,Object_ID
+2026-03-25 11:40:57.601,Manual_Test,Keyboard_Input
+2026-03-25 11:41:02.956,Manual_Test,Keyboard_Input
+2026-03-25 11:41:03.219,Manual_Test,Keyboard_Input
+2026-03-25 11:55:02.237,Manual_Test,Keyboard_Input
+2026-03-25 11:55:28.249,Target_Collected,Red_Berry
+2026-03-25 11:57:23.229,Target_Collected,Red_Berry
+2026-03-25 11:59:07.288,Target_Collected,Red_Berry
+2026-03-25 12:03:38.236,Target_Collected,Red_Berry
