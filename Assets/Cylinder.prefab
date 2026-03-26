@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 4480254097328162875}
   - component: {fileID: 3095248674720443103}
   - component: {fileID: 7076383046851017358}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: Cylinder
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -129,4 +129,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ForagingTarget
   logger: {fileID: 0}
   targetType: Red_Berry
-  pointValue: 10
+  heightValue: 0
+  colorValue: 0
+  detectionRadius: 1.5

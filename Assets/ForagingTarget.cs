@@ -2,64 +2,44 @@ using UnityEngine;
 
 public class ForagingTarget : MonoBehaviour
 {
-    [Header("Data & Metadata")]
     public DataLogger logger;
-    public string targetType;
+    public string targetType = "Cylinder";
+    public float heightValue; 
+    public float colorValue;
+    public float detectionRadius = 1.0f;
+    
+    private Vector3 spawnedScale; // The scale AFTER the generator modifies it
 
-    private Renderer rend;
-    private Color originalColor;
-    private Vector3 spawnScale;
-
-    public float detectionRadius { get; private set; } 
-
-    private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
-    private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
-
-    void Start()
+    void Start() 
     {
-        rend = GetComponent<Renderer>();
-        if (rend != null) 
-        {
-            // Cache color using URP property or fallback
-            originalColor = rend.material.HasProperty(BaseColorId) ? 
-                            rend.material.GetColor(BaseColorId) : rend.material.color;
-
-            rend.material.EnableKeyword("_EMISSION");
-            rend.material.SetColor(EmissionColorId, Color.black);
-        }
-
-        spawnScale = transform.localScale;
-        detectionRadius = spawnScale.x * 0.5f;
-    }
-
-    public void SetHighlight(bool highlight)
-    {
-        if (rend == null) return;
-
-        Color emission = highlight ? originalColor * 2.5f : Color.black;
-        rend.material.SetColor(EmissionColorId, emission);
+        // Height: map 0-1 to a range (e.g., 0.5 to 2.5)
+        float visualHeight = heightValue * 2.5f; 
         
-        // Re-apply base color to maintain consistency
-        if (rend.material.HasProperty(BaseColorId))
-            rend.material.SetColor(BaseColorId, originalColor);
-        else
-            rend.material.color = originalColor;
+        // Width (Skinny Logic): Inverse of height. 
+        // As heightValue goes UP (1.0), width goes DOWN (0.4).
+        // As heightValue goes DOWN (0.1), width goes UP (1.2).
+        float visualWidth = 1.3f - heightValue; 
+
+        // Apply the research-driven scale
+        transform.localScale = new Vector3(visualWidth, visualHeight, visualWidth);
+        
+        // Record this as our 100% starting point for the shrinking animation
+        spawnedScale = transform.localScale;
     }
 
-    public float GetCurrentPercent()
+    public void Shrink(float percentRemaining)
     {
-        return spawnScale.x > 0 ? transform.localScale.x / spawnScale.x : 0f;
+        // Multiply the modified spawned scale by the percentage
+        transform.localScale = spawnedScale * percentRemaining;
     }
 
-    public void Shrink(Vector3 startScale, float progress)
+    public void CompleteHarvest(float timeSpent, float h, float c, float reward)
     {
-        transform.localScale = Vector3.Lerp(startScale, Vector3.zero, Mathf.Clamp01(progress));
-        if (progress >= 1f) CompleteHarvest();
-    }
-
-    private void CompleteHarvest()
-    {
-        if (logger != null) logger.LogEvent("Object_Harvested", targetType);
+        if (logger != null) 
+        {
+            string stats = $"Time:{timeSpent:F2}, H:{h:F2}, C:{c:F2}, Rew:{reward:F2}";
+            logger.LogEvent("Object_Harvested", $"{targetType} | {stats}");
+        }
         Destroy(gameObject);
     }
 }
