@@ -24,6 +24,19 @@ public class PlayerHarvestController : MonoBehaviour
         }
     }
 
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.CompareTag("Target"))
+        {
+            ForagingTarget target = other.GetComponent<ForagingTarget>();
+            if (target != null)
+            {
+                currentTarget = target;
+                currentTarget.SetHighlight(true); // Turn on the glow
+            }
+        }
+    }
+
     private void OnTriggerStay(Collider other)
     {
         // Find the ForagingTarget script on the object or its parent
@@ -37,7 +50,12 @@ public class PlayerHarvestController : MonoBehaviour
             {
                 float amount = growthRate * Time.deltaTime;
                 currentTarget.StartHarvesting(amount);
-                totalReward += (amount * 0.4f);
+                
+                // Only add reward if it's still "alive"
+                if (currentTarget != null) 
+                {
+                    totalReward += (amount * 0.4f);
+                }
             }
             else
             {
@@ -48,10 +66,14 @@ public class PlayerHarvestController : MonoBehaviour
 
     private void OnTriggerExit(Collider other)
     {
-        if (currentTarget != null)
+        if (other.CompareTag("Target"))
         {
-            currentTarget.StopHarvesting();
-            currentTarget = null;
+            ForagingTarget target = other.GetComponent<ForagingTarget>();
+            if (target != null)
+            {
+                target.SetHighlight(false); // Turn off the glow
+                if (currentTarget == target) currentTarget = null;
+            }
         }
     }
 

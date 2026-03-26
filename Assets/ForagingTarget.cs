@@ -13,10 +13,19 @@ public class ForagingTarget : MonoBehaviour
     [Header("Visuals")]
     public Gradient colorPalette; // Drag/Set your Viridis colors here in the Inspector  
 
+    [Header("Vanish Settings")]
+    public float vanishThreshold = 0.15f; // Stop harvesting at this height
+    private bool isVanishing = false;
+
+    [Header("Highlight Settings")]
+    public float highlightIntensity = 2.0f; // How much it glows
+    private Color originalColor;
+
     private float currentHeight;
     private ParticleSystem.Particle[] particles;
     private Transform stockpileTarget;
     private Renderer meshRenderer;
+    private Renderer stockpileRenderer;
 
     void Start()
     {
@@ -29,6 +38,14 @@ public class ForagingTarget : MonoBehaviour
                 meshChild.localScale = new Vector3(visualWidth, currentHeight, visualWidth);
                 meshChild.localPosition = new Vector3(0, currentHeight / 2f, 0);
                 meshRenderer = meshChild.GetComponent<Renderer>();
+
+                if (meshRenderer != null)
+                    {
+                        originalColor = colorPalette.Evaluate(colorValue);
+                        meshRenderer.material.color = originalColor;
+                        // Ensure emission is ready
+                        meshRenderer.material.EnableKeyword("_EMISSION");
+                    }
 
                 // Apply the Viridis color based on the 0-1 colorValue from the Generator
                 if (meshRenderer != null && colorPalette != null)
@@ -51,8 +68,12 @@ public class ForagingTarget : MonoBehaviour
 
             // Find the central stockpile
             GameObject sp = GameObject.Find("StockpileAnchor");
-            if (sp != null) stockpileTarget = sp.transform;
-
+            if (sp != null) 
+                    {
+                        stockpileTarget = sp.transform;
+                        // Get the renderer of the stockpile to find its "Top"
+                        stockpileRenderer = sp.GetComponentInChildren<Renderer>();
+                    }
             // Ensure emission is off by default
             var em = vortexSystem.emission;
             em.rateOverTime = 0;
@@ -61,32 +82,50 @@ public class ForagingTarget : MonoBehaviour
 
     public void StartHarvesting(float amount)
     {
-        if (vortexSystem == null || meshChild == null) return;
+        if (vortexSystem == null || meshChild == null || isVanishing) return;
 
-        // 1. Turn on the "Hose"
         var em = vortexSystem.emission;
         em.rateOverTime = 35;
 
-        // 2. Shrink the cylinder
         currentHeight = Mathf.Max(0, currentHeight - amount);
-        meshChild.localScale = new Vector3(meshChild.localScale.x, currentHeight, meshChild.localScale.z);
         
-        // 3. Keep the BOTTOM pinned to the ground (Y=0)
-        // Because the pivot is in the middle, we must offset by half the current height
+        // Update visuals
+        meshChild.localScale = new Vector3(meshChild.localScale.x, currentHeight, meshChild.localScale.z);
         meshChild.localPosition = new Vector3(0, currentHeight / 2f, 0);
 
-        // 4. Move the Emitter to the literal top of the mesh bounds
         if (meshRenderer != null)
         {
             float topY = meshRenderer.bounds.max.y;
             vortexSystem.transform.position = new Vector3(transform.position.x, topY, transform.position.z);
         }
 
-        if (currentHeight <= 0.05f) 
+        // NEW: The "Pop" Trigger
+        if (currentHeight <= vanishThreshold) 
         { 
-            StopHarvesting(); 
-            Destroy(gameObject, 0.5f); 
+            TriggerVanish();
         }
+    }
+
+    private void TriggerVanish()
+    {
+        if (isVanishing) return;
+        isVanishing = true;
+
+        StopHarvesting();
+        
+        // 1. Flash the color to white
+        if (meshRenderer != null)
+        {
+            meshRenderer.material.EnableKeyword("_EMISSION");
+            meshRenderer.material.SetColor("_EmissionColor", Color.white * 2f); // HDR Glow
+            meshRenderer.material.color = Color.white;
+        }
+
+        // 2. Scale it up slightly for a "pop" effect
+        meshChild.localScale *= 1.2f;
+
+        // 3. Kill it after a split second
+        Destroy(gameObject, 0.1f); 
     }
 
     public void StopHarvesting()
@@ -104,26 +143,33 @@ public class ForagingTarget : MonoBehaviour
 
         int num = vortexSystem.GetParticles(particles);
         
-        // Target: The top of the stockpile (using localScale.y as a height proxy)
-        Vector3 sinkPos = stockpileTarget.position + Vector3.up * stockpileTarget.localScale.y;
-        
-        // Source: The literal top of the cylinder mesh right now
+        // THE FIX: Target the literal top surface of the stockpile
+        Vector3 sinkPos;
+        if (stockpileRenderer != null)
+        {
+            // Use the bounds.max.y to find the current top of the stockpile mesh
+            float sinkTopY = stockpileRenderer.bounds.max.y;
+            sinkPos = new Vector3(stockpileTarget.position.x, sinkTopY, stockpileTarget.position.z);
+        }
+        else
+        {
+            // Fallback if no renderer is found
+            sinkPos = stockpileTarget.position + Vector3.up * stockpileTarget.localScale.y;
+        }
+
         Vector3 sourcePos = new Vector3(transform.position.x, meshRenderer.bounds.max.y, transform.position.z);
 
         for (int i = 0; i < num; i++)
         {
-            // NEWBORN CHECK: If the particle is less than 1 frame old, 
-            // force it to the sourcePos to kill the center-spawn flicker.
             float age = particles[i].startLifetime - particles[i].remainingLifetime;
             if (age < 0.05f)
             {
                 particles[i].position = sourcePos;
             }
 
-            // Movement toward the sink
+            // Move toward the top of the stockpile
             particles[i].position = Vector3.MoveTowards(particles[i].position, sinkPos, 28f * Time.deltaTime);
             
-            // Arrival logic
             if (Vector3.Distance(particles[i].position, sinkPos) < 0.2f)
             {
                 particles[i].remainingLifetime = 0;
@@ -131,5 +177,21 @@ public class ForagingTarget : MonoBehaviour
         }
         
         vortexSystem.SetParticles(particles, num);
+    }
+
+    public void SetHighlight(bool active)
+    {
+        if (meshRenderer == null || isVanishing) return;
+
+        if (active)
+        {
+            // Set the emission to a brighter version of its own color
+            meshRenderer.material.SetColor("_EmissionColor", originalColor * highlightIntensity);
+        }
+        else
+        {
+            // Turn off the glow
+            meshRenderer.material.SetColor("_EmissionColor", Color.black);
+        }
     }
 }
