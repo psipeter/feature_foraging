@@ -2,44 +2,134 @@ using UnityEngine;
 
 public class ForagingTarget : MonoBehaviour
 {
-    public DataLogger logger;
-    public string targetType = "Cylinder";
-    public float heightValue; 
-    public float colorValue;
-    public float detectionRadius = 1.0f;
-    
-    private Vector3 spawnedScale; // The scale AFTER the generator modifies it
+    [Header("Hierarchy References")]
+    public Transform meshChild; 
+    public ParticleSystem vortexSystem; 
 
-    void Start() 
+    [Header("Data Settings")]
+    public float colorValue;     
+    public float heightValue = 0.5f; 
+
+    [Header("Visuals")]
+    public Gradient colorPalette; // Drag/Set your Viridis colors here in the Inspector  
+
+    private float currentHeight;
+    private ParticleSystem.Particle[] particles;
+    private Transform stockpileTarget;
+    private Renderer meshRenderer;
+
+    void Start()
     {
-        // Height: map 0-1 to a range (e.g., 0.5 to 2.5)
-        float visualHeight = heightValue * 2.5f; 
+        // 1. Initial Height setup
+        currentHeight = heightValue * 2.5f;
+        float visualWidth = 1.3f - heightValue;
         
-        // Width (Skinny Logic): Inverse of height. 
-        // As heightValue goes UP (1.0), width goes DOWN (0.4).
-        // As heightValue goes DOWN (0.1), width goes UP (1.2).
-        float visualWidth = 1.3f - heightValue; 
+        if (meshChild != null)
+            {
+                meshChild.localScale = new Vector3(visualWidth, currentHeight, visualWidth);
+                meshChild.localPosition = new Vector3(0, currentHeight / 2f, 0);
+                meshRenderer = meshChild.GetComponent<Renderer>();
 
-        // Apply the research-driven scale
-        transform.localScale = new Vector3(visualWidth, visualHeight, visualWidth);
-        
-        // Record this as our 100% starting point for the shrinking animation
-        spawnedScale = transform.localScale;
-    }
+                // Apply the Viridis color based on the 0-1 colorValue from the Generator
+                if (meshRenderer != null && colorPalette != null)
+                {
+                    // .Evaluate(colorValue) picks the exact color along your Viridis gradient
+                    Color pickedColor = colorPalette.Evaluate(colorValue);
+                    meshRenderer.material.color = pickedColor;
+                }
+            }
 
-    public void Shrink(float percentRemaining)
-    {
-        // Multiply the modified spawned scale by the percentage
-        transform.localScale = spawnedScale * percentRemaining;
-    }
-
-    public void CompleteHarvest(float timeSpent, float h, float c, float reward)
-    {
-        if (logger != null) 
+        if (vortexSystem != null)
         {
-            string stats = $"Time:{timeSpent:F2}, H:{h:F2}, C:{c:F2}, Rew:{reward:F2}";
-            logger.LogEvent("Object_Harvested", $"{targetType} | {stats}");
+            particles = new ParticleSystem.Particle[vortexSystem.main.maxParticles];
+            
+            // Initial positioning of the emitter at the mesh top
+            if (meshRenderer != null)
+            {
+                vortexSystem.transform.position = new Vector3(transform.position.x, meshRenderer.bounds.max.y, transform.position.z);
+            }
+
+            // Find the central stockpile
+            GameObject sp = GameObject.Find("StockpileAnchor");
+            if (sp != null) stockpileTarget = sp.transform;
+
+            // Ensure emission is off by default
+            var em = vortexSystem.emission;
+            em.rateOverTime = 0;
         }
-        Destroy(gameObject);
+    }
+
+    public void StartHarvesting(float amount)
+    {
+        if (vortexSystem == null || meshChild == null) return;
+
+        // 1. Turn on the "Hose"
+        var em = vortexSystem.emission;
+        em.rateOverTime = 35;
+
+        // 2. Shrink the cylinder
+        currentHeight = Mathf.Max(0, currentHeight - amount);
+        meshChild.localScale = new Vector3(meshChild.localScale.x, currentHeight, meshChild.localScale.z);
+        
+        // 3. Keep the BOTTOM pinned to the ground (Y=0)
+        // Because the pivot is in the middle, we must offset by half the current height
+        meshChild.localPosition = new Vector3(0, currentHeight / 2f, 0);
+
+        // 4. Move the Emitter to the literal top of the mesh bounds
+        if (meshRenderer != null)
+        {
+            float topY = meshRenderer.bounds.max.y;
+            vortexSystem.transform.position = new Vector3(transform.position.x, topY, transform.position.z);
+        }
+
+        if (currentHeight <= 0.05f) 
+        { 
+            StopHarvesting(); 
+            Destroy(gameObject, 0.5f); 
+        }
+    }
+
+    public void StopHarvesting()
+    {
+        if (vortexSystem != null)
+        {
+            var em = vortexSystem.emission;
+            em.rateOverTime = 0;
+        }
+    }
+
+    void LateUpdate()
+    {
+        if (vortexSystem == null || stockpileTarget == null || meshRenderer == null) return;
+
+        int num = vortexSystem.GetParticles(particles);
+        
+        // Target: The top of the stockpile (using localScale.y as a height proxy)
+        Vector3 sinkPos = stockpileTarget.position + Vector3.up * stockpileTarget.localScale.y;
+        
+        // Source: The literal top of the cylinder mesh right now
+        Vector3 sourcePos = new Vector3(transform.position.x, meshRenderer.bounds.max.y, transform.position.z);
+
+        for (int i = 0; i < num; i++)
+        {
+            // NEWBORN CHECK: If the particle is less than 1 frame old, 
+            // force it to the sourcePos to kill the center-spawn flicker.
+            float age = particles[i].startLifetime - particles[i].remainingLifetime;
+            if (age < 0.05f)
+            {
+                particles[i].position = sourcePos;
+            }
+
+            // Movement toward the sink
+            particles[i].position = Vector3.MoveTowards(particles[i].position, sinkPos, 28f * Time.deltaTime);
+            
+            // Arrival logic
+            if (Vector3.Distance(particles[i].position, sinkPos) < 0.2f)
+            {
+                particles[i].remainingLifetime = 0;
+            }
+        }
+        
+        vortexSystem.SetParticles(particles, num);
     }
 }
